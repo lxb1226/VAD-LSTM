@@ -221,13 +221,13 @@ if __name__ == "__main__":
     parser.add_argument('--lr', default=0.001, type=float)
     parser.add_argument('--num_epoch', default=10, type=int)
     parser.add_argument('--report_interval', default=50, type=int)
-    parser.add_argument('--stage', default=0, type=int)
+    parser.add_argument('--stage', default=3, type=int)
     parser.add_argument('--L', default=5, type=int)  # adjust length in VACC calculation
 
     args = parser.parse_args()
 
     # 获取配置并创建文件夹
-    # TODO：抽离出来形成一个配置文件，文件名形成大写
+    # TODO：抽离出来形成一个配置文件，变量名大写
     root = os.getcwd()
     dev_path = os.path.join(root, "wavs", "dev")
     train_path = os.path.join(root, "wavs", "train")
@@ -421,6 +421,7 @@ if __name__ == "__main__":
         # 模型在测试集的评估 即最终结果
         # TODO：同样考虑封装成一个函数
         print('stage 3: model predicting')
+        vad_net.load_state_dict(torch.load(os.path.join(root, f"epoch_{args.num_epoch - 1}.pth")))
         vis_sample(vad_net, dev_lbl_dict, dev_feat_path, fig_path, save=True)
         vis_sample(vad_net, dev_lbl_dict, dev_feat_path, fig_path, save=True)
         # TODO:这里出现了问题
