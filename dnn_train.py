@@ -19,6 +19,7 @@ import random
 
 from models import DNN
 
+
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
@@ -37,10 +38,7 @@ def vis_sample(model, lbl_dict, feat_path, fig_path, save=True):
     sample = np.load(os.path.join(feat_path, sample_path))
     sample_label = lbl_dict[sample_id]
 
-    hiddens = model.init_hiddens(1)
-    hiddens = (hiddens[0].to(device), hiddens[1].to(device))
-
-    sample_pred = model(torch.from_numpy(sample).unsqueeze(1).float().to(device), hiddens)
+    sample_pred = model(torch.from_numpy(sample).unsqueeze(1).float().to(device))
     sample_pred = sample_pred.squeeze()
     sample_pred = sample_pred.detach().cpu().numpy()
     auc_nosmooth, eer_nosmooth, _, _ = get_metrics(sample_pred, sample_label)
@@ -55,34 +53,6 @@ def vis_sample(model, lbl_dict, feat_path, fig_path, save=True):
         plt.savefig(os.path.join(fig_path, '{}_pred.png'.format(sample_id)), dpi=120)
     plt.show()
 
-
-class VADnet(nn.Module):
-    def __init__(self, input_dim, hidden_size, num_layers):
-        super(VADnet, self).__init__()
-        self.hidden_size = hidden_size
-        self.input_dim = input_dim
-        self.num_layers = num_layers
-        self.lstm = nn.LSTM(input_size=input_dim,
-                            hidden_size=hidden_size, num_layers=num_layers, bias=True, batch_first=False,
-                            bidirectional=True)
-        self.fc = nn.Linear(in_features=2 * hidden_size,
-                            out_features=1, bias=True)
-        self.sigmoid = nn.Sigmoid()
-
-    def init_hiddens(self, batch_size):
-        # hidden state should be (num_layers*num_directions, batch_size, hidden_size)
-        # returns a hidden state and a cell state
-        return (torch.rand(size=(self.num_layers * 2, batch_size, self.hidden_size)),) * 2
-
-    def forward(self, input_data, hiddens):
-        '''
-        input_data : (seq_len, batchsize, input_dim)
-        '''
-        outputs, hiddens = self.lstm(input_data, hiddens)
-        # outputs: (seq_len, batch_size, num_directions* hidden_size)
-        pred = self.fc(outputs)
-        pred = self.sigmoid(pred)
-        return pred
 
 def train_dnn(vad_net, inp, target, criterion, optimizer):
     pass
@@ -103,10 +73,8 @@ def train(vad_net, inp, target, criterion, optimizer):
     inp.to(device)
     target.to(device)
 
-    hiddens = vad_net.init_hiddens(batch_size=1)
-    hiddens = (hiddens[0].to(device), hiddens[1].to(device))
     optimizer.zero_grad()
-    pred = torch.squeeze(vad_net(inp, hiddens))
+    pred = torch.squeeze(vad_net(inp))
     loss = criterion(pred, target.squeeze_())
     loss.backward()
     optimizer.step()
@@ -128,10 +96,8 @@ def evaluate(model, feat_path, lbl_dict):
 
         inp = torch.unsqueeze(torch.from_numpy(frames).float(), 1).to(device)
 
-        hiddens = model.init_hiddens(batch_size=1)
-        hiddens = (hiddens[0].to(device), hiddens[1].to(device))
 
-        pred = torch.squeeze(model(inp, hiddens))
+        pred = torch.squeeze(model(inp))
         all_pred += pred.detach().cpu().numpy().tolist()
         all_lbls += lbl_dict[audio_id]
         assert len(all_pred) == len(all_lbls)
@@ -155,10 +121,7 @@ def calc_metrics(model, feat_path, lbl_dict, L, thres=0.5):
 
         inp = torch.unsqueeze(torch.from_numpy(frames).float(), 1).to(device)
 
-        hiddens = model.init_hiddens(batch_size=1)
-        hiddens = (hiddens[0].to(device), hiddens[1].to(device))
-
-        pred = torch.squeeze(model(inp, hiddens))
+        pred = torch.squeeze(model(inp))
         all_pred += pred.detach().cpu().numpy().tolist()
         all_lbls += lbl_dict[audio_id]
         assert len(all_pred) == len(all_lbls)
@@ -207,10 +170,7 @@ def predict(args, model, feat_path, target_path):
             frames = np.load(os.path.join(feat_path, testfile))
             inp = torch.unsqueeze(torch.from_numpy(frames).float(), 1).to(device)
 
-            hiddens = model.init_hiddens(batch_size=1)
-            hiddens = (hiddens[0].to(device), hiddens[1].to(device))
-
-            pred = torch.squeeze(model(inp, hiddens))
+            pred = torch.squeeze(model(inp))
 
             line = prediction_to_vad_label(pred, args.win_len, args.win_hop, 0.5)
             f.write(test_id + " " + line + '\n')
@@ -218,7 +178,7 @@ def predict(args, model, feat_path, target_path):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description='Run LSTM for VAD')
+        description='Run DNN for VAD')
     parser.add_argument('--fs', default=16000, type=int)
     parser.add_argument('--win_len', default=0.032, type=float)
     parser.add_argument('--win_hop', default=0.008, type=float)
@@ -245,7 +205,7 @@ if __name__ == "__main__":
     feat_path = os.path.join(root, r"feats")
     dev_feat_path = os.path.join(feat_path, r'dev')
     train_feat_path = os.path.join(feat_path, r'train')
-    # test_feat_path = os.path.join(feat_path, r'test')
+
     clean_feat_path = os.path.join(feat_path, r'test', r'clean_data_test')
     seen_noise_feat_path = os.path.join(feat_path, r'test', r'seen_noise_test')
     unseen_noise_feat_path = os.path.join(feat_path, r'test', r'unseen_noise_test')
@@ -351,31 +311,21 @@ if __name__ == "__main__":
             frame_feats = np.concatenate((frame_energy, frame_mfcc), axis=1)
             np.save(os.path.join(unseen_noise_feat_path, wav_id + '.npy'), frame_feats)
 
-        with open(os.path.join(data_path, r"dev_lbl_dict.json"), 'r') as f:
-            dev_lbl_dict = json.load(f)
-        with open(os.path.join(data_path, r"train_lbl_dict.json"), 'r') as f:
-            train_lbl_dict = json.load(f)
+    with open(os.path.join(data_path, r"dev_lbl_dict.json"), 'r') as f:
+        dev_lbl_dict = json.load(f)
+    with open(os.path.join(data_path, r"train_lbl_dict.json"), 'r') as f:
+        train_lbl_dict = json.load(f)
 
     # 构建模型
     # TODO：也需要进一步封装
-    if args.model == "LSTM":
-        input_dim = 14  # 1(energy)+13(mfcc)
-        hidden_size = args.hidden_size
-        num_layers = args.num_layers
-        vad_net = VADnet(input_dim, hidden_size=hidden_size, num_layers=num_layers).to(device)
-        # Binary Cross Entropy
-        criterion = nn.BCELoss()
-        optimizer = torch.optim.Adam(vad_net.parameters(), lr=args.lr)
-        report_interval = args.report_interval
-        interval_loss = 0
-    else:
-        input_dim = 14
-        hidden_size = args.hidden_size
-        vad_net = DNN.DNN_VAD(input_size=input_dim, hidden_size=hidden_size).to(device)
-        criterion = nn.BCELoss()
-        optimizer = torch.optim.Adam(vad_net.parameters(), lr=args.lr)
-        report_interval = args.report_interval
-        interval_loss = 0
+
+    input_dim = 14
+    hidden_size = args.hidden_size
+    vad_net = DNN.DNN_VAD(input_size=input_dim, hidden_size=hidden_size).to(device)
+    criterion = nn.BCELoss()
+    optimizer = torch.optim.Adam(vad_net.parameters(), lr=args.lr)
+    report_interval = args.report_interval
+    interval_loss = 0
 
     if args.stage <= 1:
         # 模型训练过程
@@ -439,9 +389,11 @@ if __name__ == "__main__":
         vad_net.load_state_dict(torch.load(os.path.join(root, f"epoch_{args.num_epoch - 1}.pth")))
         vis_sample(vad_net, dev_lbl_dict, dev_feat_path, fig_path, save=True)
         vis_sample(vad_net, dev_lbl_dict, dev_feat_path, fig_path, save=True)
-        # TODO:这里出现了问题
+
         predict(args, vad_net, clean_feat_path, data_path)
         predict(args, vad_net, seen_noise_feat_path, data_path)
         predict(args, vad_net, unseen_noise_feat_path, data_path)
 
     print('DONE!')
+
+
