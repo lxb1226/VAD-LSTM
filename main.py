@@ -221,7 +221,7 @@ if __name__ == "__main__":
     parser.add_argument('--lr', default=0.001, type=float)
     parser.add_argument('--num_epoch', default=10, type=int)
     parser.add_argument('--report_interval', default=50, type=int)
-    parser.add_argument('--stage', default=3, type=int)
+    parser.add_argument('--stage', default=2, type=int)
     parser.add_argument('--L', default=5, type=int)  # adjust length in VACC calculation
 
     args = parser.parse_args()
@@ -425,8 +425,8 @@ if __name__ == "__main__":
         vis_sample(vad_net, dev_lbl_dict, dev_feat_path, fig_path, save=True)
         vis_sample(vad_net, dev_lbl_dict, dev_feat_path, fig_path, save=True)
         # TODO:这里出现了问题
-        predict(args, vad_net, clean_feat_path, data_path)
-        predict(args, vad_net, seen_noise_feat_path, data_path)
-        predict(args, vad_net, unseen_noise_feat_path, data_path)
+        # predict(args, vad_net, clean_feat_path, data_path)
+        # predict(args, vad_net, seen_noise_feat_path, data_path)
+        # predict(args, vad_net, unseen_noise_feat_path, data_path)
 
     print('DONE!')
